@@ -1,4 +1,4 @@
-// Export every trend finder feature components, hooks, services from this file.
+export * from './api'
 export * from './components'
 export * from './hooks'
 export * from './services'
