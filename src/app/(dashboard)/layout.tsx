@@ -1,4 +1,5 @@
 import React from 'react'
+import { DashboardHeader } from '@/features/auth'
 
 export default function DashboardLayout({
   children,
@@ -15,10 +16,14 @@ export default function DashboardLayout({
            <a href="/content" className="block p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded">Content Generator</a>
            <a href="/competitors" className="block p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded">Competitor Analyzer</a>
            <a href="/leads" className="block p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded">Lead Finder</a>
+           <a href="/seo" className="block p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded">SEO Analysis</a>
         </nav>
       </aside>
-      <main className="flex-1 p-8">
-        {children}
+      <main className="flex-1 flex flex-col">
+        <DashboardHeader />
+        <div className="p-8">
+          {children}
+        </div>
       </main>
     </div>
   )
