@@ -1,20 +1,17 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { type NextRequest } from 'next/server'
+import { updateSession } from './shared/lib/supabase/middleware'
 
-export function proxy(request: NextRequest) {
-  // Add authentication or other proxy logic here
-  return NextResponse.next()
+export async function proxy(request: NextRequest) {
+  return await updateSession(request)
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/dashboard/:path*',
+    '/seo/:path*',
+    '/trends/:path*',
+    '/content/:path*',
+    '/competitors/:path*',
+    '/leads/:path*'
   ],
 }
