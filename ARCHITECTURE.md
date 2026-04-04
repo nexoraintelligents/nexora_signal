@@ -24,58 +24,75 @@ The project is structured under the `src/features/` directory. Each feature is a
 ```text
 src/
 ├── app/                        # Next.js routes (App Router)
-│   ├── (auth)/                 # Grouped Auth routes
-│   │   ├── login/
-│   │   └── signup/
-│   ├── (dashboard)/            # Grouped Dashboard routes (authenticated)
-│   │   ├── trends/
-│   │   ├── content/
-│   │   └── layout.tsx          # Dashboard-specific UI (Sidebar, Navbar)
-│   └── page.tsx                # Public Landing Page
+│   ├── (auth)/                 # Grouped Auth routes (login, signup)
+│   ├── (dashboard)/            # Authenticated Dashboard routes
+│   │   ├── seo/                # SEO Analysis Dashboard
+│   │   ├── trends/             # Trend Finder
+│   │   ├── content/            # Content Generator
+│   │   ├── competitors/        # Competitor Analyzer
+│   │   ├── leads/              # Lead Finder
+│   │   └── layout.tsx          # Sidebar & Dashboard Shell
+│   ├── api/                    # API Endpoints
+│   │   └── seo/                # /api/seo/analyze, /api/seo/reports
 │
-├── features/                   # 🔥 MAIN SCALE LAYER
-│   ├── trend/                  # Feature: Trend Finder
-│   ├── content/                # Feature: Content Generator
-│   ├── auth/                   # Feature: Authentication UI & Logic
-│   └── billing/                # Feature: Stripe & Subscription
+├── features/                   # 🔥 MAIN SCALE LAYER (Feature Modules)
+│   ├── auth/                   # Login, Signup, Org Switcher logic
+│   ├── seo/                    # SEO Business Logic & Components
+│   │   ├── api/                # analyze.ts, getReportsPaginated.ts
+│   │   ├── components/         # SeoScore.tsx, SeoHistoryTable.tsx, etc.
+│   │   ├── hooks/              # useSeoAnalysis.ts, useSeoHistory.ts
+│   │   └── types.ts            # Detailed SeoReportV2 definitions
+│   ├── trend/                  # Trend detection engine
+│   ├── leads/                  # Lead generation UI
+│   ├── competitor/             # Scraper and analysis UI
+│   └── billing/                # Stripe integration
 │
 ├── shared/                     # Global Shared Directory
-│   ├── ui/                     # Generic UI (Button, Modal, Input)
-│   ├── lib/                    # Shared utilities (supabase-client, axios)
-│   └── hooks/                  # Global hooks (useTheme, useUser)
+│   ├── components/             # Reusable UI (Button, OrgSwitcher)
+│   └── lib/                    # Supabase & shared utilities
 │
 ├── server/                     # Backend-Only Logic
-│   ├── db/                     # Supabase database queries and schemas
-│   ├── ai/                     # OpenAI / LLM integration logic
-│   └── jobs/                   # Background job processing
-│
-├── config/                     # Environment and App configs
-└── middleware.ts               # Request protection and routing
+│   ├── db/                     # DB access layer (seoReports.ts, organizations.ts)
+│   └── seo/                    # 🔥 SEO ENGINE (Modular Analyzers)
+│       ├── analyzer.ts         # Orchestrator (Parallel Execution)
+│       ├── seoService.ts       # Service Layer (Status & Persistence)
+│       ├── scoreEngine.ts      # Weighted Scoring & Recommendations
+│       ├── tagAnalyzer.ts      # Deep technical tag inspection
+│       └── imageAnalyzer.ts    # Image SEO & asset optimization
 ```
 
 ---
 
 ## 3. High Performance & Scalability (100k+ Users)
 
-### A. Database Strategy (Supabase)
-1. **Edge Functions**: Offload heavy logic or secure API keys to Supabase Edge Functions.
-2. **Row-Level Security (RLS)**: Crucial for security at scale. Every query is filtered at the DB level based on the `auth.uid()`.
-3. **Optimistic Updates**: Use `React Query` (TanStack Query) in the `features/[feature]/hooks/` to provide a lag-free experience.
+### A. Modular SEO Engine (V2)
+The SEO engine is decoupled into independent, parallelized modules. This ensures:
+1. **Performance**: All scans (Meta, PageSpeed, Links, Images) run concurrently.
+2. **Resilience**: A failure in one external API (like PageSpeed) doesn't crash the report.
+3. **Accuracy**: A weighted scoring algorithm (Meta 20%, Performance 20%, etc.) provides realistic health scores.
+
+### C. Production Hardening
+For enterprise-level reliability, the system implements:
+- **Race-Condition Safe Deduplication**: Prevents redundant compute by locking concurrent requests for the same URL.
+- **Partial Failure Resilience**: Uses a "Modular Try/Catch" wrapper for each analyzer, allowing reports to complete even if one module (like PageSpeed) fails.
+- **Explainable Scoring**: Provides transparent `scoreDetails` (sections, scores, and reasons) instead of just a raw number.
+
+### D. Database Strategy
+1. **Row-Level Security (RLS)**: Enforced on all tables to ensure multi-tenant data isolation.
+2. **Indexing**: Strategic indexes on `(url, organization_id, created_at)` for O(1) deduplication and history retrieval.
 
 ### B. Backend Separation (`server/` Layer)
 As the app grows, you can easily migrate the code in `src/server/` into a dedicated **FastAPI** or **Go** microservice. The structure already decouples DB logic from React components.
 
-### C. UI Consistency (`shared/ui/`)
-All developers use the same `shared/ui` components (built with Tailwind + Framer Motion). This ensures the app looks and feels premium without ad-hoc styling.
-
 ---
 
-## 4. Next Steps & Implementation Checklist
+## 4. Implementation Checklist
 
 - [x] Initial Directory Structure Created
 - [x] Root & Dashboard Layouts Implemented
-- [x] Middleware Configured
-- [ ] **Step 1:** Install & Initialize `@supabase/auth-helpers-nextjs` and `@supabase/supabase-js`.
-- [ ] **Step 2:** Setup Environment Variables (`.env.local`) for Supabase URL/Key.
-- [ ] **Step 3:** Implement Auth flow in `features/auth`.
-- [ ] **Step 4:** Integrate Open AI in `server/ai/content-gen.ts`.
+- [x] **Step 1:** SEO Analysis Engine V2 (Modular, Weighted, Parallel).
+- [x] **Step 2:** SaaS-Grade Service Layer (Timeouts, Dedup, Status System).
+- [x] **Step 3:** Technical SEO Module (Robots, Sitemaps, Canonicals).
+- [x] **Step 4:** Production Hardening (Race-safety, Partial failures, explainable scores).
+- [ ] **Step 5:** Integrate Open AI in `server/ai/content-gen.ts`.
+- [ ] **Step 6:** Competitor Analysis Real-time Scrapers.
