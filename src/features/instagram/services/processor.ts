@@ -88,71 +88,81 @@ export async function syncInstagramData() {
   const mediaList = await getInstagramMedia();
   console.log(`[Instagram Sync] Found ${mediaList.length} media items from Meta`);
 
-  for (const media of mediaList) {
-    console.log(`[Instagram Sync] Processing media: ${media.id}`);
-    
-    // 1. Sync Media Info
-    const { error: mediaErr } = await supabaseAdmin.from('instagram_media').upsert({
-      ig_id: media.id,
-      caption: media.caption,
-      media_type: media.media_type,
-      media_url: media.media_url,
-      permalink: media.permalink,
-      timestamp: media.timestamp,
-      like_count: media.like_count,
-      comments_count: media.comments_count,
-    }, { onConflict: 'ig_id' });
+  // Process all media items in parallel to stay under Vercel timeout
+  await Promise.all(mediaList.map(async (media) => {
+    try {
+      console.log(`[Instagram Sync] Processing media: ${media.id}`);
+      
+      // 1. Sync Media Info + Insights + Comments in parallel for this media item
+      const [insights, comments] = await Promise.all([
+        getMediaInsights(media.id, media.media_type),
+        getInstagramComments(media.id)
+      ]);
 
-    if (mediaErr) {
-      console.error(`[Instagram Sync] Error upserting media ${media.id}:`, mediaErr);
-      continue;
-    }
-
-    // 2. Sync Insights (type-aware)
-    const insights = await getMediaInsights(media.id, media.media_type);
-    console.log(`[Instagram Sync] Fetched insights for ${media.id}: ${insights.length} metrics`);
-    for (const metric of insights) {
-      const value = metric.values ? metric.values[0]?.value : metric.value;
-      const { error: insErr } = await supabaseAdmin.from('instagram_insights').upsert({
-        metric_name: metric.name,
-        value: typeof value === 'number' ? value : 0,
-        period: metric.period || 'lifetime',
-        target_id: media.id,
-        end_time: metric.values ? (metric.values[0]?.end_time || null) : null,
-      }, { onConflict: 'metric_name,target_id,end_time' });
-      if (insErr) console.error(`[Instagram Sync] Error upserting insight ${metric.name}:`, insErr);
-    }
-
-
-    // 3. Sync Comments + Replies
-    const comments = await getInstagramComments(media.id);
-    console.log(`[Instagram Sync] Fetched comments for ${media.id}: ${comments.length} items`);
-    for (const comment of comments) {
-      const { error: comErr } = await supabaseAdmin.from('instagram_comments').upsert({
-        ig_id: comment.id,
-        media_id: media.id,
-        text: comment.text,
-        username: comment.from?.username || 'instagram_user',
-        like_count: comment.like_count || 0,
-        timestamp: comment.timestamp,
+      const mediaUpdate = supabaseAdmin.from('instagram_media').upsert({
+        ig_id: media.id,
+        caption: media.caption,
+        media_type: media.media_type,
+        media_url: media.media_url,
+        permalink: media.permalink,
+        timestamp: media.timestamp,
+        like_count: media.like_count,
+        comments_count: media.comments_count,
       }, { onConflict: 'ig_id' });
-      if (comErr) console.error(`[Instagram Sync] Error upserting comment ${comment.id}:`, comErr);
 
-      // Sync replies nested under each comment
-      const replies = comment.replies?.data || [];
-      for (const reply of replies) {
-        const { error: repErr } = await supabaseAdmin.from('instagram_comment_replies').upsert({
-          ig_id: reply.id,
-          comment_id: comment.id,
-          text: reply.text,
-          username: reply.from?.username || 'instagram_user',
-          timestamp: reply.timestamp,
-        }, { onConflict: 'ig_id' });
-        if (repErr) console.error(`[Instagram Sync] Error upserting reply ${reply.id}:`, repErr);
+      const insightUpdates = insights.length > 0 ? supabaseAdmin.from('instagram_insights').upsert(
+        insights.map(m => ({
+          metric_name: m.name,
+          value: typeof (m.values ? m.values[0]?.value : m.value) === 'number' ? (m.values ? m.values[0]?.value : m.value) : 0,
+          period: m.period || 'lifetime',
+          target_id: media.id,
+          end_time: m.values ? (m.values[0]?.end_time || null) : null,
+        })), 
+        { onConflict: 'metric_name,target_id,end_time' }
+      ) : Promise.resolve({ error: null });
+
+      const commentUpdates = comments.length > 0 ? supabaseAdmin.from('instagram_comments').upsert(
+        comments.map(c => ({
+          ig_id: c.id,
+          media_id: media.id,
+          text: c.text,
+          username: c.from?.username || c.user?.username || 'instagram_user',
+          like_count: c.like_count || 0,
+          timestamp: c.timestamp,
+        })),
+        { onConflict: 'ig_id' }
+      ) : Promise.resolve({ error: null });
+
+      // Build bulk replies list while comments are processing
+      const allReplies: any[] = [];
+      comments.forEach(c => {
+        if (c.replies?.data) {
+          c.replies.data.forEach((r: any) => {
+            allReplies.push({
+              ig_id: r.id,
+              comment_id: c.id,
+              text: r.text,
+              username: r.from?.username || r.user?.username || 'instagram_user',
+              timestamp: r.timestamp,
+            });
+          });
+        }
+      });
+
+      const replyUpdates = allReplies.length > 0 ? supabaseAdmin.from('instagram_comment_replies').upsert(allReplies, { onConflict: 'ig_id' }) : Promise.resolve({ error: null });
+
+      // Wait for all DB writes for this media item to complete
+      const results = await Promise.all([mediaUpdate, insightUpdates, commentUpdates, replyUpdates]);
+      const errors = results.map(r => r.error).filter(Boolean);
+      if (errors.length > 0) {
+        console.error(`[Instagram Sync] DB Errors for media ${media.id}:`, errors);
+      } else {
+        console.log(`[Instagram Sync] Successfully synced media ${media.id} (${comments.length} comments)`);
       }
+    } catch (err) {
+      console.error(`[Instagram Sync] Failed processing media ${media.id}:`, err);
     }
-
-  }
+  }));
 
   console.log(`[Instagram Sync] All operations complete.`);
 }
