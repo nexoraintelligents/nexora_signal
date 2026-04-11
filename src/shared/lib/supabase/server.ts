@@ -7,8 +7,15 @@ export async function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+  console.log('[Supabase Server Client] Initializing with:', {
+    hasUrl: !!url,
+    hasKey: !!key,
+    keyPrefix: key?.substring(0, 10)
+  });
+
   if (!url || !key) {
     console.warn('Supabase credentials missing. Returning mock server client.')
+
     return {
       auth: { 
         getUser: async () => ({ data: { user: null }, error: null }),
