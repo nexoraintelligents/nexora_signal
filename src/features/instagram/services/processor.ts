@@ -127,7 +127,6 @@ export async function syncInstagramData() {
           media_id: media.id,
           text: c.text,
           username: c.from?.username || c.user?.username || 'instagram_user',
-          like_count: c.like_count || 0,
           timestamp: c.timestamp,
         })),
         { onConflict: 'ig_id' }
