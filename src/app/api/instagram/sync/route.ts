@@ -6,10 +6,13 @@ import { syncInstagramData } from '@/features/instagram/services/processor';
  * Triggers a manual synchronization of media and insights from Meta.
  */
 export async function POST() {
+  console.log('[Instagram Sync API] POST request received');
   try {
     await syncInstagramData();
+    console.log('[Instagram Sync API] Sync successfully triggered');
     return NextResponse.json({ success: true, message: 'Sync complete' });
   } catch (error) {
+
     console.error('[Instagram Sync API Error]', error);
     return NextResponse.json(
       { success: false, error: 'Failed to sync data' },
