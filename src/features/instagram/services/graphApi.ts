@@ -141,4 +141,19 @@ export async function getInstagramComments(mediaId: string): Promise<any[]> {
   }
 }
 
+/**
+ * Fetch username from IGSID
+ */
+export async function getInstagramUsername(igSid: string): Promise<string> {
+  const url = `https://graph.instagram.com/${META_API_VERSION}/${igSid}?fields=name,username&access_token=${INSTAGRAM_ACCESS_TOKEN}`;
+  
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    return data.username || data.name || 'instagram_user';
+  } catch {
+    return 'instagram_user';
+  }
+}
+
 

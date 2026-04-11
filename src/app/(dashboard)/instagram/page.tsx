@@ -227,7 +227,9 @@ export default async function InstagramDashboardPage() {
                           <User className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-slate-900 dark:text-white">{msg.sender_id}</div>
+                          <div className="text-sm font-medium text-slate-900 dark:text-white">
+                            {msg.username ? `@${msg.username}` : msg.sender_id}
+                          </div>
                           <div className="text-xs text-slate-500 flex items-center mt-0.5">
                             <Clock className="w-3 h-3 mr-1" />
                             {new Date(msg.created_at).toLocaleString()}

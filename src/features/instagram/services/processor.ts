@@ -4,7 +4,8 @@ import {
   sendInstagramMessage, 
   getInstagramMedia, 
   getMediaInsights, 
-  getInstagramComments 
+  getInstagramComments,
+  getInstagramUsername
 } from './graphApi';
 
 // Anon client for public webhook operations
@@ -61,7 +62,7 @@ async function handleIncomingComment(value: any) {
   const { id, text, from, timestamp, media_id } = value;
   console.log(`[Instagram] New comment on ${media_id} from ${from?.username}: ${text}`);
 
-  await supabase.from('instagram_comments').upsert({
+  await supabaseAdmin.from('instagram_comments').upsert({
     ig_id: id,
     media_id: media_id,
     text: text,
@@ -199,9 +200,13 @@ async function processSingleMessage(msg: ProcessedMessage) {
   // 3. Send Reply via Graph API first to get the response confirmation
   const apiResponse = await sendInstagramMessage(msg.senderId, replyText);
 
+  // Fetch username
+  const senderUsername = await getInstagramUsername(msg.senderId);
+
   // 4. Store EVERYTHING in Supabase (Single Insert matches RLS policy)
   const { error: dbError } = await supabase.from('instagram_messages').insert({
     sender_id: msg.senderId,
+    username: senderUsername,
     message: msg.messageText,
     response: replyText,
     mid: msg.mid,
