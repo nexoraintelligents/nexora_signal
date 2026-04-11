@@ -56,22 +56,27 @@ export async function sendInstagramMessage(
 export async function getInstagramMedia(): Promise<any[]> {
   if (!INSTAGRAM_ACCESS_TOKEN) return [];
 
-  const url = `https://graph.instagram.com/${META_API_VERSION}/me/media?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count`;
+  let url = `https://graph.instagram.com/${META_API_VERSION}/me/media?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count`;
 
+  let allMedia: any[] = [];
   try {
-    const response = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${INSTAGRAM_ACCESS_TOKEN}` },
-    });
-    const data = await response.json();
-    console.log('[Instagram API Response (Media)]', JSON.stringify(data, null, 2));
-    if (data.error) {
-      console.error('[Instagram API Error Body]', JSON.stringify(data.error, null, 2));
+    while (url && allMedia.length < 200) { // Fetch up to 200 items for safety
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${INSTAGRAM_ACCESS_TOKEN}` },
+      });
+      const data = await response.json();
+      
+      if (data.data) {
+        allMedia = allMedia.concat(data.data);
+      }
+      
+      url = data.paging?.next || null;
     }
-
-    return data.data || [];
+    console.log(`[Instagram API Response (Media)] Fetched ${allMedia.length} total media items`);
+    return allMedia;
   } catch (error) {
     console.error('[Instagram] getInstagramMedia failed:', error);
-    return [];
+    return allMedia;
   }
 }
 
@@ -116,7 +121,7 @@ export async function getMediaInsights(mediaId: string, mediaType?: string): Pro
 export async function getInstagramComments(mediaId: string): Promise<any[]> {
   if (!INSTAGRAM_ACCESS_TOKEN) return [];
 
-  let url = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/comments?fields=id,text,timestamp,like_count,from,user,replies{id,text,timestamp,from,user}`;
+  let url = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/comments?fields=id,text,timestamp,like_count,from,user,replies{id,text,timestamp,from,user}&limit=100`;
   let allComments: any[] = [];
 
   try {
