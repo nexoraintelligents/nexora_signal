@@ -77,18 +77,34 @@ export async function getInstagramMedia(): Promise<any[]> {
 
 
 /**
- * Fetches insights for a specific media object.
+ * Fetches all available insights for a specific media object.
+ * Metric sets differ by media type (IMAGE vs REELS vs VIDEO).
  */
-export async function getMediaInsights(mediaId: string): Promise<any[]> {
+export async function getMediaInsights(mediaId: string, mediaType?: string): Promise<any[]> {
   if (!INSTAGRAM_ACCESS_TOKEN) return [];
 
-  const url = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/insights?metric=engagement,impressions,reach,saved`;
+  // Reels have different metric names
+  const isReel = mediaType === 'VIDEO' || mediaType === 'REELS';
+
+  const metrics = isReel
+    ? 'plays,reach,likes,comments,shares,saved,total_interactions,ig_reels_avg_watch_time,ig_reels_video_view_total_time'
+    : 'impressions,reach,engagement,saved,profile_visits,follows,shares,likes,comments_count';
+
+  const url = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/insights?metric=${metrics}`;
 
   try {
     const response = await fetch(url, {
       headers: { 'Authorization': `Bearer ${INSTAGRAM_ACCESS_TOKEN}` },
     });
     const data = await response.json();
+    if (data.error) {
+      console.error(`[Instagram] Insights error for ${mediaId}:`, data.error);
+      // Try fallback with basic metrics
+      const fallbackUrl = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/insights?metric=impressions,reach,saved`;
+      const fallbackRes = await fetch(fallbackUrl, { headers: { 'Authorization': `Bearer ${INSTAGRAM_ACCESS_TOKEN}` } });
+      const fallbackData = await fallbackRes.json();
+      return fallbackData.data || [];
+    }
     console.log('[Instagram API Response (Insights)]', JSON.stringify(data, null, 2));
     return data.data || [];
   } catch (error) {
@@ -96,6 +112,7 @@ export async function getMediaInsights(mediaId: string): Promise<any[]> {
     return [];
   }
 }
+
 
 /**
  * Fetches comments for a specific media object (includes like count and reply count).

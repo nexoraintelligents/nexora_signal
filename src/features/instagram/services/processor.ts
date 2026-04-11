@@ -107,21 +107,21 @@ export async function syncInstagramData() {
       continue;
     }
 
-    // 2. Sync Insights
-    const insights = await getMediaInsights(media.id);
+    // 2. Sync Insights (type-aware)
+    const insights = await getMediaInsights(media.id, media.media_type);
     console.log(`[Instagram Sync] Fetched insights for ${media.id}: ${insights.length} metrics`);
     for (const metric of insights) {
-      for (const value of metric.values) {
-        const { error: insErr } = await supabaseAdmin.from('instagram_insights').upsert({
-          metric_name: metric.name,
-          value: value.value,
-          period: metric.period,
-          target_id: media.id,
-          end_time: value.end_time,
-        });
-        if (insErr) console.error(`[Instagram Sync] Error upserting insight ${metric.name}:`, insErr);
-      }
+      const value = metric.values ? metric.values[0]?.value : metric.value;
+      const { error: insErr } = await supabaseAdmin.from('instagram_insights').upsert({
+        metric_name: metric.name,
+        value: typeof value === 'number' ? value : 0,
+        period: metric.period || 'lifetime',
+        target_id: media.id,
+        end_time: metric.values ? (metric.values[0]?.end_time || null) : null,
+      }, { onConflict: 'metric_name,target_id,end_time' });
+      if (insErr) console.error(`[Instagram Sync] Error upserting insight ${metric.name}:`, insErr);
     }
+
 
     // 3. Sync Comments + Replies
     const comments = await getInstagramComments(media.id);
