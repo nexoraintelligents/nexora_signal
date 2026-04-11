@@ -7,10 +7,10 @@ import {
   CheckCircle2, 
   BarChart3, 
   Image as ImageIcon, 
-  RefreshCw,
   Heart,
   MessageSquare
 } from 'lucide-react';
+import SyncButton from './SyncButton';
 
 export const metadata = {
   title: 'Instagram Analytics | Nexora Signal',
@@ -49,15 +49,7 @@ export default async function InstagramDashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <form action="/api/instagram/sync" method="POST">
-            <button 
-              type="submit"
-              className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors shadow-sm gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Sync Now
-            </button>
-          </form>
+          <SyncButton />
           <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/20">
             <BarChart3 className="w-6 h-6" />
           </div>
