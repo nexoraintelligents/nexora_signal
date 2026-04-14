@@ -10,13 +10,29 @@ export async function sendInstagramMessage(
   recipientId: string,
   text: string
 ): Promise<MetaReplyResponse | null> {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN; // ✅ read at request time
+
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+
+  console.log("========== INSTAGRAM SEND DEBUG START ==========");
+  console.log("[DEBUG] Recipient:", recipientId);
+  console.log("[DEBUG] Message:", text);
+  console.log("[DEBUG] Token exists:", !!token);
+
   if (!token) {
-    console.error('[Instagram] INSTAGRAM_ACCESS_TOKEN is not defined');
+    console.error('[Instagram] ❌ INSTAGRAM_ACCESS_TOKEN is not defined');
     return null;
   }
 
-  const url = `https://graph.instagram.com/${META_API_VERSION}/me/messages`;
+  // ✅ FIXED endpoint
+  const url = `https://graph.facebook.com/v25.0/me/messages`;
+
+  const payload = {
+    recipient: { id: recipientId },
+    message: { text },
+  };
+
+  console.log("[DEBUG] URL:", url);
+  console.log("[DEBUG] Payload:", JSON.stringify(payload, null, 2));
 
   try {
     const response = await fetch(url, {
@@ -25,24 +41,49 @@ export async function sendInstagramMessage(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text },
-      }),
+      body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
-    console.log('[Instagram API Response (Message)]', JSON.stringify(data, null, 2));
+    // 🔥 IMPORTANT DEBUG
+    console.log("[DEBUG] HTTP Status:", response.status);
+    console.log("[DEBUG] Status Text:", response.statusText);
 
-    if (!response.ok) {
-      console.error('[Instagram] API Error:', data);
-      return null; // ✅ no longer throws — caller handles null safely
+    const textResponse = await response.text(); // 👈 raw response first
+    console.log("[DEBUG] Raw Response:", textResponse);
+
+    let data;
+    try {
+      data = JSON.parse(textResponse);
+    } catch (e) {
+      console.error("[DEBUG] ❌ JSON Parse Failed");
+      return null;
     }
 
-    console.log(`[Instagram] Message sent to ${recipientId}:`, data.message_id || data.mid);
+    console.log("[DEBUG] Parsed Response:", JSON.stringify(data, null, 2));
+
+    // 🔴 META ERROR FORMAT
+    if (data.error) {
+      console.error("❌ META API ERROR:");
+      console.error("Type:", data.error.type);
+      console.error("Message:", data.error.message);
+      console.error("Code:", data.error.code);
+      console.error("Subcode:", data.error.error_subcode);
+      console.error("FB Trace ID:", data.error.fbtrace_id);
+      return null;
+    }
+
+    if (!response.ok) {
+      console.error("[Instagram] ❌ HTTP Error but no meta error:", data);
+      return null;
+    }
+
+    console.log("✅ MESSAGE SENT SUCCESSFULLY:", data);
+    console.log("========== INSTAGRAM SEND DEBUG END ==========");
+
     return data as MetaReplyResponse;
+
   } catch (error) {
-    console.error('[Instagram] sendInstagramMessage failed:', error);
+    console.error('[Instagram] ❌ NETWORK ERROR:', error);
     return null;
   }
 }
