@@ -198,11 +198,15 @@ async function processSingleMessage(msg: ProcessedMessage) {
 
   try {
     // FIX 1: Use supabaseAdmin to bypass RLS
-    const { data: existing } = await supabaseAdmin
-      .from('instagram_messages')
-      .select('id')
-      .eq('mid', msg.mid)
-      .single();
+const { data: existing, error: dedupError } = await supabaseAdmin
+  .from('instagram_messages')
+  .select('id')
+  .eq('mid', msg.mid)
+  .maybeSingle();             // ← key change
+
+if (dedupError) {
+  console.error('[Instagram] Dedup check error:', dedupError);
+}
 
     if (existing) {
       console.log(`[Instagram] Duplicate: ${msg.mid}. Skipping.`);
