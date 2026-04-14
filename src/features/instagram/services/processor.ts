@@ -9,22 +9,15 @@ import {
   sendPrivateReply
 } from './graphApi';
 
-// Anon client for public webhook operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-// Service role client bypasses RLS — used for server-side sync writes
+// Service role client — bypasses RLS for all server-side operations
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-
-
 /**
  * Main entry point for processing incoming Instagram webhook events.
+ * ✅ FIX: await processSingleMessage so Vercel doesn't kill it early
  */
 export async function processWebhookPayload(payload: InstagramWebhookPayload) {
   const entries = payload.entry || [];
@@ -36,12 +29,13 @@ export async function processWebhookPayload(payload: InstagramWebhookPayload) {
       if (event.message?.is_echo) continue;
       if (!event.message?.text) continue;
 
-      processSingleMessage({
+      // ✅ FIX: was fire-and-forget (.catch only) — Vercel killed it before completion
+      await processSingleMessage({
         senderId: event.sender.id,
         messageText: event.message.text,
         mid: event.message.mid,
         timestamp: event.timestamp,
-      }).catch(err => console.error('[Instagram DM Error]', err));
+      });
     }
 
     // 2. Handle Changes (Feed, Comments, etc.)
@@ -71,17 +65,13 @@ async function handleIncomingComment(value: any) {
     timestamp: new Date(timestamp * 1000).toISOString(),
   }, { onConflict: 'ig_id' });
 
-  // --- AUTOMATION LOGIC ---
-  // If comment contains keywords "send", "info", "link", or "details", send a private DM
   const lowerText = text.toLowerCase();
   const automationKeywords = ['send', 'info', 'link', 'details', 'check', 'price'];
-  
   const shouldAutomate = automationKeywords.some(kw => lowerText.includes(kw));
 
   if (shouldAutomate) {
     console.log(`[Instagram Automation] Triggering private reply for comment ${id}`);
     const automationMessage = `Hey @${from?.username || 'there'}! Thanks for your comment. Here is the link you requested: https://nexora.signal/details/${media_id}`;
-    
     await sendPrivateReply(id, automationMessage);
   }
 }
@@ -90,25 +80,19 @@ async function handleIncomingComment(value: any) {
  * Handles feed changes (likes, new posts, etc.)
  */
 async function handleFeedChange(value: any) {
-  // Logic to handle likes or media updates
-  // Usually involves re-fetching the specific media object
+  // TODO: handle feed events
 }
 
 /**
  * Full synchronization of Media and Insights.
- * Best triggered manually or via a cron job.
  */
 export async function syncInstagramData() {
   console.log('[Instagram Sync] Starting full data sync...');
   const mediaList = await getInstagramMedia();
   console.log(`[Instagram Sync] Found ${mediaList.length} media items from Meta`);
 
-  // Process all media items in parallel to stay under Vercel timeout
   await Promise.all(mediaList.map(async (media) => {
     try {
-      console.log(`[Instagram Sync] Processing media: ${media.id}`);
-      
-      // 1. Sync Media Info + Insights + Comments in parallel for this media item
       const [insights, comments] = await Promise.all([
         getMediaInsights(media.id, media.media_type),
         getInstagramComments(media.id)
@@ -132,7 +116,7 @@ export async function syncInstagramData() {
           period: m.period || 'lifetime',
           target_id: media.id,
           end_time: m.values ? (m.values[0]?.end_time || null) : null,
-        })), 
+        })),
         { onConflict: 'metric_name,target_id,end_time' }
       ) : Promise.resolve({ error: null });
 
@@ -147,7 +131,6 @@ export async function syncInstagramData() {
         { onConflict: 'ig_id' }
       ) : Promise.resolve({ error: null });
 
-      // Build bulk replies list while comments are processing
       const allReplies: any[] = [];
       comments.forEach(c => {
         if (c.replies?.data) {
@@ -163,9 +146,10 @@ export async function syncInstagramData() {
         }
       });
 
-      const replyUpdates = allReplies.length > 0 ? supabaseAdmin.from('instagram_comment_replies').upsert(allReplies, { onConflict: 'ig_id' }) : Promise.resolve({ error: null });
+      const replyUpdates = allReplies.length > 0
+        ? supabaseAdmin.from('instagram_comment_replies').upsert(allReplies, { onConflict: 'ig_id' })
+        : Promise.resolve({ error: null });
 
-      // Wait for all DB writes for this media item to complete
       const results = await Promise.all([mediaUpdate, insightUpdates, commentUpdates, replyUpdates]);
       const errors = results.map(r => r.error).filter(Boolean);
       if (errors.length > 0) {
@@ -181,42 +165,33 @@ export async function syncInstagramData() {
   console.log(`[Instagram Sync] All operations complete.`);
 }
 
-
-
-
 /**
- * Processes a single message: deduplication, NLP, storage, and reply.
+ * Processes a single DM: deduplication, intent detection, reply, storage.
  */
 async function processSingleMessage(msg: ProcessedMessage) {
   console.log(`[Instagram] Processing message from ${msg.senderId}: ${msg.messageText}`);
-    console.log('[Debug] ENV check:', {
-    hasToken: !!process.env.INSTAGRAM_ACCESS_TOKEN,
-    tokenLength: process.env.INSTAGRAM_ACCESS_TOKEN?.length,
-    hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-    hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-  });
 
   try {
-    // FIX 1: Use supabaseAdmin to bypass RLS
-const { data: existing, error: dedupError } = await supabaseAdmin
-  .from('instagram_messages')
-  .select('id')
-  .eq('mid', msg.mid)
-  .maybeSingle();             // ← key change
+    // 1. Deduplication — maybeSingle() returns null safely when no row found
+    const { data: existing, error: dedupError } = await supabaseAdmin
+      .from('instagram_messages')
+      .select('id')
+      .eq('mid', msg.mid)
+      .maybeSingle(); // ✅ FIX: .single() was throwing PGRST116 on every new message
 
-if (dedupError) {
-  console.error('[Instagram] Dedup check error:', dedupError);
-}
+    if (dedupError) {
+      console.error('[Instagram] Dedup check error:', dedupError);
+    }
 
     if (existing) {
-      console.log(`[Instagram] Duplicate: ${msg.mid}. Skipping.`);
+      console.log(`[Instagram] Duplicate message: ${msg.mid}. Skipping.`);
       return;
     }
 
-    // Intent detection
+    // 2. Intent Detection
     const intent = detectIntent(msg.messageText);
-    console.log(`[Instagram] Intent detected: ${intent}`); // ← add this
-    
+    console.log(`[Instagram] Intent detected: ${intent}`);
+
     let replyText = '';
     switch (intent) {
       case 'GREETING':
@@ -227,20 +202,20 @@ if (dedupError) {
         break;
       case 'FALLBACK':
       default:
-        replyText = "Thank you for your message. Our team will get back to you soon!";
+        replyText = 'Thank you for your message. Our team will get back to you soon!';
         break;
     }
 
-    // FIX 2: Wrap API call in try/catch
+    // 3. Send Reply
     let apiResponse = null;
     try {
       apiResponse = await sendInstagramMessage(msg.senderId, replyText);
-      console.log(`[Instagram] Reply sent successfully:`, apiResponse);
+      console.log(`[Instagram] Reply sent:`, apiResponse);
     } catch (apiErr) {
-      console.error(`[Instagram] sendInstagramMessage FAILED:`, apiErr); // ← now visible
+      console.error(`[Instagram] sendInstagramMessage FAILED:`, apiErr);
     }
 
-    // Fetch username
+    // 4. Fetch Username
     let senderUsername = 'unknown';
     try {
       senderUsername = await getInstagramUsername(msg.senderId);
@@ -248,7 +223,7 @@ if (dedupError) {
       console.error(`[Instagram] getInstagramUsername failed:`, e);
     }
 
-    // FIX 1 continued: Use supabaseAdmin for insert too
+    // 5. Store in DB
     const { error: dbError } = await supabaseAdmin
       .from('instagram_messages')
       .insert({
@@ -275,29 +250,16 @@ if (dedupError) {
   }
 }
 
-
 /**
- * Basic NLP logic to detect user intent from message text.
+ * Basic NLP intent detection.
  */
 function detectIntent(text: string): Intent {
-  const normalizedText = text.toLowerCase().trim();
+  const t = text.toLowerCase().trim();
 
-  if (
-    normalizedText.includes('hello') ||
-    normalizedText.includes('hi') ||
-    normalizedText.includes('hey')
-  ) {
-    return 'GREETING';
-  }
+  if (['hello', 'hi', 'hey'].some(w => t.includes(w))) return 'GREETING';
 
-  if (
-    normalizedText.includes('price') ||
-    normalizedText.includes('pricing') ||
-    normalizedText.includes('cost') ||
-    normalizedText.includes('how much')
-  ) {
-    return 'PRICING';
-  }
+  if (['price', 'pricing', 'cost', 'how much', 'send', 'link', 'info', 'details', 'check']
+    .some(w => t.includes(w))) return 'PRICING';
 
   return 'FALLBACK';
 }
@@ -306,7 +268,5 @@ function detectIntent(text: string): Intent {
  * Placeholder for OpenAI integration.
  */
 async function getAIReply(text: string): Promise<string> {
-  // TODO: Add OpenAI API call here
-  // const response = await openai.chat.completions.create({...});
-  return "AI generated response placeholder";
+  return 'AI generated response placeholder';
 }
