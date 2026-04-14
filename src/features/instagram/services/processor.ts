@@ -169,30 +169,38 @@ export async function syncInstagramData() {
  * Processes a single DM: deduplication, intent detection, reply, storage.
  */
 async function processSingleMessage(msg: ProcessedMessage) {
-  console.log(`[Instagram] Processing message from ${msg.senderId}: ${msg.messageText}`);
+  console.log("===== START processSingleMessage =====");
+  console.log(`[STEP 0] Incoming:`, msg);
 
   try {
-    // 1. Deduplication — maybeSingle() returns null safely when no row found
+    // STEP 1: Dedup
+    console.log("[STEP 1] Checking duplicate...");
     const { data: existing, error: dedupError } = await supabaseAdmin
       .from('instagram_messages')
       .select('id')
       .eq('mid', msg.mid)
-      .maybeSingle(); // ✅ FIX: .single() was throwing PGRST116 on every new message
+      .maybeSingle();
+
+    console.log("[STEP 1 DONE] existing:", existing);
 
     if (dedupError) {
-      console.error('[Instagram] Dedup check error:', dedupError);
+      console.error('[STEP 1 ERROR] Dedup error:', dedupError);
     }
 
     if (existing) {
-      console.log(`[Instagram] Duplicate message: ${msg.mid}. Skipping.`);
+      console.log(`[STEP 1 EXIT] Duplicate message: ${msg.mid}`);
       return;
     }
 
-    // 2. Intent Detection
+    // STEP 2: Intent
+    console.log("[STEP 2] Detecting intent...");
     const intent = detectIntent(msg.messageText);
-    console.log(`[Instagram] Intent detected: ${intent}`);
+    console.log(`[STEP 2 DONE] Intent: ${intent}`);
 
+    // STEP 3: Prepare reply
+    console.log("[STEP 3] Preparing reply...");
     let replyText = '';
+
     switch (intent) {
       case 'GREETING':
         replyText = 'Hello! Welcome to Nexora Automation. How can I help you today?';
@@ -200,30 +208,37 @@ async function processSingleMessage(msg: ProcessedMessage) {
       case 'PRICING':
         replyText = 'Our pricing plans start at $19/month. Visit our website for details.';
         break;
-      case 'FALLBACK':
       default:
         replyText = 'Thank you for your message. Our team will get back to you soon!';
-        break;
     }
 
-    // 3. Send Reply
+    console.log("[STEP 3 DONE] Reply:", replyText);
+
+    // STEP 4: SEND MESSAGE (CRITICAL)
+    console.log("🚀 [STEP 4] About to call sendInstagramMessage...");
+
     let apiResponse = null;
+
     try {
       apiResponse = await sendInstagramMessage(msg.senderId, replyText);
-      console.log(`[Instagram] Reply sent:`, apiResponse);
+      console.log("✅ [STEP 4 DONE] API Response:", apiResponse);
     } catch (apiErr) {
-      console.error(`[Instagram] sendInstagramMessage FAILED:`, apiErr);
+      console.error("❌ [STEP 4 ERROR] sendInstagramMessage crashed:", apiErr);
     }
 
-    // 4. Fetch Username
+    // STEP 5: Username fetch
+    console.log("[STEP 5] Fetching username...");
     let senderUsername = 'unknown';
+
     try {
       senderUsername = await getInstagramUsername(msg.senderId);
+      console.log("[STEP 5 DONE] Username:", senderUsername);
     } catch (e) {
-      console.error(`[Instagram] getInstagramUsername failed:`, e);
+      console.error("[STEP 5 ERROR] Username fetch failed:", e);
     }
 
-    // 5. Store in DB
+    // STEP 6: Store DB
+    console.log("[STEP 6] Inserting into DB...");
     const { error: dbError } = await supabaseAdmin
       .from('instagram_messages')
       .insert({
@@ -240,14 +255,16 @@ async function processSingleMessage(msg: ProcessedMessage) {
       });
 
     if (dbError) {
-      console.error('[Instagram] Supabase Insert Error:', dbError);
+      console.error("❌ [STEP 6 ERROR] DB Insert:", dbError);
     } else {
-      console.log(`[Instagram] Message stored in DB successfully`);
+      console.log("✅ [STEP 6 DONE] Stored in DB");
     }
 
   } catch (err) {
-    console.error(`[Instagram] processSingleMessage fatal error:`, err);
+    console.error("💥 FATAL ERROR in processSingleMessage:", err);
   }
+
+  console.log("===== END processSingleMessage =====");
 }
 
 /**
