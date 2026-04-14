@@ -190,62 +190,80 @@ export async function syncInstagramData() {
 async function processSingleMessage(msg: ProcessedMessage) {
   console.log(`[Instagram] Processing message from ${msg.senderId}: ${msg.messageText}`);
 
-  // 1. Deduplication: Check if message ID already exists in Supabase
-  const { data: existing } = await supabase
-    .from('instagram_messages')
-    .select('id')
-    .eq('mid', msg.mid)
-    .single();
+  try {
+    // FIX 1: Use supabaseAdmin to bypass RLS
+    const { data: existing } = await supabaseAdmin
+      .from('instagram_messages')
+      .select('id')
+      .eq('mid', msg.mid)
+      .single();
 
-  if (existing) {
-    console.log(`[Instagram] Duplicate message detected: ${msg.mid}. Skipping.`);
-    return;
-  }
+    if (existing) {
+      console.log(`[Instagram] Duplicate: ${msg.mid}. Skipping.`);
+      return;
+    }
 
-  // 2. Intent Detection (Basic NLP)
-  const intent = detectIntent(msg.messageText);
-  let replyText = '';
+    // Intent detection
+    const intent = detectIntent(msg.messageText);
+    console.log(`[Instagram] Intent detected: ${intent}`); // ← add this
+    
+    let replyText = '';
+    switch (intent) {
+      case 'GREETING':
+        replyText = 'Hello! Welcome to Nexora Automation. How can I help you today?';
+        break;
+      case 'PRICING':
+        replyText = 'Our pricing plans start at $19/month. Visit our website for details.';
+        break;
+      case 'FALLBACK':
+      default:
+        replyText = "Thank you for your message. Our team will get back to you soon!";
+        break;
+    }
 
-  switch (intent) {
-    case 'GREETING':
-      replyText = 'Hello! Welcome to Nexora Automation. How can I help you today?';
-      break;
-    case 'PRICING':
-      replyText = 'Our pricing plans start at $19/month. You can find more details on our website.';
-      break;
-    case 'FALLBACK':
-    default:
-      // PLACEHOLDER: Integrate with OpenAI or another AI service here
-      // const aiReply = await getAIReply(msg.messageText);
-      replyText = "Thank you for your message. Our team will get back to you soon!";
-      break;
-  }
+    // FIX 2: Wrap API call in try/catch
+    let apiResponse = null;
+    try {
+      apiResponse = await sendInstagramMessage(msg.senderId, replyText);
+      console.log(`[Instagram] Reply sent successfully:`, apiResponse);
+    } catch (apiErr) {
+      console.error(`[Instagram] sendInstagramMessage FAILED:`, apiErr); // ← now visible
+    }
 
-  // 3. Send Reply via Graph API first to get the response confirmation
-  const apiResponse = await sendInstagramMessage(msg.senderId, replyText);
+    // Fetch username
+    let senderUsername = 'unknown';
+    try {
+      senderUsername = await getInstagramUsername(msg.senderId);
+    } catch (e) {
+      console.error(`[Instagram] getInstagramUsername failed:`, e);
+    }
 
-  // Fetch username
-  const senderUsername = await getInstagramUsername(msg.senderId);
+    // FIX 1 continued: Use supabaseAdmin for insert too
+    const { error: dbError } = await supabaseAdmin
+      .from('instagram_messages')
+      .insert({
+        sender_id: msg.senderId,
+        username: senderUsername,
+        message: msg.messageText,
+        response: replyText,
+        mid: msg.mid,
+        metadata: {
+          intent,
+          timestamp: msg.timestamp,
+          api_response: apiResponse,
+        },
+      });
 
-  // 4. Store EVERYTHING in Supabase (Single Insert matches RLS policy)
-  const { error: dbError } = await supabase.from('instagram_messages').insert({
-    sender_id: msg.senderId,
-    username: senderUsername,
-    message: msg.messageText,
-    response: replyText,
-    mid: msg.mid,
-    metadata: {
-      intent,
-      timestamp: msg.timestamp,
-      api_response: apiResponse, // Now stored in the initial insert!
-    },
-  });
+    if (dbError) {
+      console.error('[Instagram] Supabase Insert Error:', dbError);
+    } else {
+      console.log(`[Instagram] Message stored in DB successfully`);
+    }
 
-  if (dbError) {
-    console.error('[Instagram] Supabase Insert Error:', dbError);
+  } catch (err) {
+    console.error(`[Instagram] processSingleMessage fatal error:`, err);
   }
 }
-
 
 
 /**
