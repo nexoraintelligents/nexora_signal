@@ -57,7 +57,7 @@ export async function getInstagramMedia(): Promise<any[]> {
     return [];
   }
 
-  let url: string | null = `https://graph.instagram.com/${META_API_VERSION}/me/media?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count`;
+  let url = `https://graph.instagram.com/${META_API_VERSION}/me/media?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count` as string | null;
   let allMedia: any[] = [];
 
   try {
@@ -127,7 +127,7 @@ export async function getInstagramComments(mediaId: string): Promise<any[]> {
     return [];
   }
 
-  let url: string | null = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/comments?fields=id,text,timestamp,like_count,from,user,replies{id,text,timestamp,from,user}&limit=100`;
+  let url = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/comments?fields=id,text,timestamp,like_count,from,user,replies{id,text,timestamp,from,user}&limit=100` as string | null;
   let allComments: any[] = [];
 
   try {
