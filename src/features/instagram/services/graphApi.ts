@@ -20,8 +20,12 @@ export async function sendInstagramMessage(
     return null;
   }
 
-  const url = `https://graph.facebook.com/${META_API_VERSION}/me/messages`;
-
+  const pageId = process.env.INSTAGRAM_PAGE_ID;
+  if (!pageId) {
+    console.error('[Instagram] ❌ INSTAGRAM_PAGE_ID is not defined');
+    return null;
+  }
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${pageId}/messages`;
   const payload = {
     recipient: { id: recipientId },
     message: { text },
@@ -121,7 +125,7 @@ export async function getInstagramMedia(): Promise<any[]> {
  * Fetches all available insights for a specific media object.
  */
 export async function getMediaInsights(mediaId: string, mediaType?: string): Promise<any[]> {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN; // ✅ read at request time
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   if (!token) {
     console.error('[Instagram] INSTAGRAM_ACCESS_TOKEN is not defined');
     return [];
@@ -132,7 +136,8 @@ export async function getMediaInsights(mediaId: string, mediaType?: string): Pro
     ? 'plays,reach,likes,comments,shares,saved,total_interactions,ig_reels_avg_watch_time'
     : 'reach,saved,total_interactions,likes,comments,shares,profile_visits,follows';
 
-  const url = `https://graph.instagram.com/${META_API_VERSION}/${mediaId}/insights?metric=${metrics}`;
+  // ✅ Correct — uses mediaId, not igSid
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${mediaId}/insights?metric=${metrics}`;
 
   try {
     const response = await fetch(url, {
@@ -145,7 +150,6 @@ export async function getMediaInsights(mediaId: string, mediaType?: string): Pro
       return [];
     }
 
-    console.log('[Instagram API Response (Insights)]', JSON.stringify(data, null, 2));
     return data.data || [];
   } catch (error) {
     console.error('[Instagram] getMediaInsights failed:', error);
@@ -192,14 +196,14 @@ export async function getInstagramComments(mediaId: string): Promise<any[]> {
  * Fetch username from IGSID.
  */
 export async function getInstagramUsername(igSid: string): Promise<string> {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN; // ✅ read at request time
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   if (!token) {
     console.error('[Instagram] INSTAGRAM_ACCESS_TOKEN is not defined');
     return 'instagram_user';
   }
 
-  // ✅ token moved to Authorization header (not exposed in URL)
-  const url = `https://graph.instagram.com/${META_API_VERSION}/${igSid}?fields=name,username`;
+  // ✅ Fixed — graph.facebook.com, not graph.instagram.com
+  const url = `https://graph.facebook.com/${META_API_VERSION}/${igSid}?fields=name,username`;
 
   try {
     const response = await fetch(url, {
