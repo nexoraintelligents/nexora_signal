@@ -1,11 +1,8 @@
 import { MetaReplyResponse } from '../types';
+import axios from "axios";
 
 const META_API_VERSION = 'v25.0';
-// ✅ REMOVED module-level token — was evaluated once at build time (always undefined on Vercel)
 
-/**
- * Sends a text message to an Instagram user via the Meta Graph API.
- */
 export async function sendInstagramMessage(
   recipientId: string,
   text: string
@@ -23,66 +20,66 @@ export async function sendInstagramMessage(
     return null;
   }
 
-  const url = `https://graph.facebook.com/v25.0/me/messages`;
+  const url = `https://graph.facebook.com/${META_API_VERSION}/me/messages`;
 
   const payload = {
     recipient: { id: recipientId },
     message: { text },
   };
 
-  // ✅ 👉 ADD HERE (BEFORE FETCH)
+  console.log("[DEBUG] URL:", url);
   console.log("[DEBUG] Payload:", JSON.stringify(payload, null, 2));
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    console.log("🔥 BEFORE AXIOS CALL");
 
-    // ✅ 👉 ADD HERE (AFTER FETCH)
-    console.log("[DEBUG] HTTP Status:", response.status);
-    console.log("[DEBUG] Status Text:", response.statusText);
+    const response = await axios.post(
+      url,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-    const textResponse = await response.text();
-    console.log("[DEBUG] Raw Response:", textResponse);
+    console.log("✅ AXIOS SUCCESS RESPONSE:");
+    console.log("[DEBUG] Status:", response.status);
+    console.log("[DEBUG] Data:", JSON.stringify(response.data, null, 2));
 
-    let data;
-    try {
-      data = JSON.parse(textResponse);
-    } catch (e) {
-      console.error("[DEBUG] ❌ JSON Parse Failed");
-      return null;
-    }
-
-    console.log("[DEBUG] Parsed Response:", JSON.stringify(data, null, 2));
-
-    // 🔴 META ERROR
-    if (data.error) {
-      console.error("❌ META API ERROR:");
-      console.error("Type:", data.error.type);
-      console.error("Message:", data.error.message);
-      console.error("Code:", data.error.code);
-      console.error("Subcode:", data.error.error_subcode);
-      console.error("FB Trace ID:", data.error.fbtrace_id);
-      return null;
-    }
-
-    if (!response.ok) {
-      console.error("[Instagram] ❌ HTTP Error:", data);
-      return null;
-    }
-
-    console.log("✅ MESSAGE SENT SUCCESSFULLY:", data);
     console.log("========== INSTAGRAM SEND DEBUG END ==========");
 
-    return data as MetaReplyResponse;
+    return response.data as MetaReplyResponse;
 
-  } catch (error) {
-    console.error('[Instagram] ❌ NETWORK ERROR:', error);
+  } catch (error: any) {
+    console.error("❌ AXIOS ERROR START ==========");
+
+    if (error.response) {
+      // 🔴 Meta API error
+      console.error("[DEBUG] HTTP Status:", error.response.status);
+      console.error("[DEBUG] Status Text:", error.response.statusText);
+      console.error("[DEBUG] Response Data:", JSON.stringify(error.response.data, null, 2));
+
+      const err = error.response.data?.error;
+      if (err) {
+        console.error("❌ META API ERROR:");
+        console.error("Type:", err.type);
+        console.error("Message:", err.message);
+        console.error("Code:", err.code);
+        console.error("Subcode:", err.error_subcode);
+        console.error("FB Trace ID:", err.fbtrace_id);
+      }
+
+    } else if (error.request) {
+      // ❌ request made but no response
+      console.error("❌ NO RESPONSE RECEIVED:", error.request);
+    } else {
+      // ❌ something else
+      console.error("❌ AXIOS GENERAL ERROR:", error.message);
+    }
+
+    console.error("❌ AXIOS ERROR END ==========");
     return null;
   }
 }
